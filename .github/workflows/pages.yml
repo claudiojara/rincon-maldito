@@ -1,0 +1,49 @@
+name: Publicar en GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - claude/comic-pixel-art-animation-0cr5bw
+    paths:
+      - 'docs/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publicar docs/ en la rama gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          publish_branch: gh-pages
+          force_orphan: true
+          commit_message: 'Publicar historieta'
+
+      - name: Activar GitHub Pages desde gh-pages (si aún no está activo)
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            try {
+              await github.rest.repos.getPages({ owner, repo });
+              core.info('GitHub Pages ya está activo.');
+            } catch (e) {
+              await github.rest.repos.createPagesSite({ owner, repo, source: { branch: 'gh-pages', path: '/' } });
+              core.info('GitHub Pages activado desde gh-pages.');
+            }
+            core.notice(`Sitio: https://${owner}.github.io/${repo}/`);
