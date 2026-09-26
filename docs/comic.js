@@ -711,15 +711,15 @@ function sWoe(fb, t) {
 
 // ---------- Guion ----------
 const SCENES = [
-  { ref: '9:1', draw: sStar, sfx: [[3, 'boom']], text: 'Y vi una estrella que cayó del cielo a la tierra; y se le dio la llave del pozo del abismo.' },
-  { ref: '9:2', draw: sWell, sfx: [[1.6, 'boom']], text: 'Y abrió el pozo del abismo, y subió humo del pozo como humo de un gran horno.' },
-  { ref: '9:2', draw: sDark, sfx: [], text: 'Y se oscureció el sol y el aire por el humo del pozo.' },
-  { ref: '9:3', draw: sSwarm, sfx: [], text: 'Y del humo salieron langostas sobre la tierra.' },
-  { ref: '9:4', draw: sForest, sfx: [], text: 'Y se les mandó que no dañasen a la hierba de la tierra, sino solamente a los hombres que no tuvieran el sello.' },
-  { ref: '9:7', draw: sFace, w: 240, h: 150, sfx: [[0.3, 'roar']], text: 'Tenían como coronas de oro; sus caras eran como caras humanas, tenían cabello como de mujer y dientes como de león.' },
-  { ref: '9:10', draw: sMonths, sfx: [], text: 'Tenían poder para dañar a los hombres durante 5 meses.' },
-  { ref: '9:11', draw: sKing, sfx: [[4.6, 'boom']], text: 'Y tienen por rey al ángel del abismo.' },
-  { ref: '9:12', draw: sWoe, sfx: [[3, 'trumpet']], text: 'El primer ay pasó; he aquí vienen aún dos ayes después de esto.' }
+  { ref: '9:1', draw: sStar, amb: 'wind', sfx: [[3, 'boom']], text: 'Y vi una estrella que cayó del cielo a la tierra; y se le dio la llave del pozo del abismo.' },
+  { ref: '9:2', draw: sWell, amb: 'wind', sfx: [[1.6, 'boom']], text: 'Y abrió el pozo del abismo, y subió humo del pozo como humo de un gran horno.' },
+  { ref: '9:2', draw: sDark, amb: 'drone', sfx: [], text: 'Y se oscureció el sol y el aire por el humo del pozo.' },
+  { ref: '9:3', draw: sSwarm, amb: 'buzz', sfx: [], text: 'Y del humo salieron langostas sobre la tierra.' },
+  { ref: '9:4', draw: sForest, amb: 'buzz', sfx: [], text: 'Y se les mandó que no dañasen a la hierba de la tierra, sino solamente a los hombres que no tuvieran el sello.' },
+  { ref: '9:7', draw: sFace, amb: 'growl', w: 240, h: 150, sfx: [[0.3, 'roar']], text: 'Tenían como coronas de oro; sus caras eran como caras humanas, tenían cabello como de mujer y dientes como de león.' },
+  { ref: '9:10', draw: sMonths, amb: 'wind', sfx: [[0.05, 'bell'], [1.3, 'bell'], [2.6, 'bell'], [3.9, 'bell'], [5.2, 'bell']], text: 'Tenían poder para dañar a los hombres durante 5 meses.' },
+  { ref: '9:11', draw: sKing, amb: 'drone', sfx: [[4.6, 'boom']], text: 'Y tienen por rey al ángel del abismo.' },
+  { ref: '9:12', draw: sWoe, amb: null, sfx: [[3, 'trumpet']], text: 'El primer ay pasó; he aquí vienen aún dos ayes después de esto.' }
 ];
 SCENES.forEach(s => { s.dur = Math.max(7.5, s.text.length / 30 + 5); });
 
@@ -728,7 +728,7 @@ const LAYOUT = [[0, 2, 4, 6], [1, 3, 5, 7, 8]];
 
 // ---------- Sonido (sintetizado, sin archivos) ----------
 const Snd = {
-  ac: null, on: true, buzzNodes: null,
+  ac: null, on: true,
   ensure() {
     if (!this.ac) { const A = window.AudioContext || window.webkitAudioContext; if (!A) return null; this.ac = new A(); }
     if (this.ac.state === 'suspended') this.ac.resume();
@@ -756,17 +756,70 @@ const Snd = {
   },
   boom() { this.noise(1.2, 380, 0.7); },
   roar() { this.noise(0.9, 900, 0.35); },
-  buzz(on) {
-    if (on && this.on && !this.buzzNodes) {
-      const ac = this.ensure(); if (!ac) return;
-      const o = ac.createOscillator(), lfo = ac.createOscillator(), lg = ac.createGain(), g = ac.createGain(), lp = ac.createBiquadFilter();
-      o.type = 'sawtooth'; o.frequency.value = 150; lfo.frequency.value = 23; lg.gain.value = 0.012; g.gain.value = 0.018;
-      lp.type = 'lowpass'; lp.frequency.value = 1200;
-      lfo.connect(lg).connect(g.gain); o.connect(lp).connect(g).connect(ac.destination);
-      o.start(); lfo.start(); this.buzzNodes = [o, lfo];
-    } else if ((!on || !this.on) && this.buzzNodes) {
-      this.buzzNodes.forEach(n => n.stop()); this.buzzNodes = null;
+  bell() {
+    if (!this.on) return; const ac = this.ensure(); if (!ac) return;
+    const t0 = ac.currentTime;
+    for (const [f, v] of [[196, 0.1], [392, 0.04], [523, 0.02]]) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8);
+      o.connect(g).connect(ac.destination); o.start(t0); o.stop(t0 + 1.9);
     }
+  },
+
+  // Ambientes de fondo: sólo suena uno a la vez y se cambian con fundido.
+  amb: null, ambNodes: null,
+  ambient(kind) {
+    if (!this.on) kind = null;
+    if (kind === this.amb) return;
+    const ac = this.ac;
+    if (this.ambNodes && ac) {
+      const { gain, srcs } = this.ambNodes, t0 = ac.currentTime;
+      gain.gain.cancelScheduledValues(t0); gain.gain.setValueAtTime(gain.gain.value, t0);
+      gain.gain.linearRampToValueAtTime(0, t0 + 0.8);
+      srcs.forEach(n => n.stop(t0 + 0.85));
+    }
+    this.amb = kind; this.ambNodes = null;
+    if (!kind) return;
+    const A = this.ensure(); if (!A) return;
+    const gain = A.createGain(), srcs = [], t0 = A.currentTime;
+    gain.gain.setValueAtTime(0, t0);
+    gain.connect(A.destination);
+    const osc = (type, f) => { const o = A.createOscillator(); o.type = type; o.frequency.value = f; srcs.push(o); return o; };
+    const lfo = (f, depth, target) => { const l = osc('sine', f), g = A.createGain(); g.gain.value = depth; l.connect(g).connect(target); };
+    const filt = (type, f, q = 1) => { const n = A.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; return n; };
+    let vol = 0.04;
+    if (kind === 'buzz') {
+      // zumbido de langostas: suave y con vaivén, no un tono fijo
+      const lp = filt('lowpass', 700), am = A.createGain(); am.gain.value = 0.6;
+      lfo(19, 0.35, am.gain);
+      for (const f of [147, 151.5]) osc('sawtooth', f).connect(lp);
+      lp.connect(am).connect(gain);
+      vol = 0.022;
+    } else if (kind === 'wind') {
+      const len = A.sampleRate * 2, buf = A.createBuffer(1, len, A.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const n = A.createBufferSource(); n.buffer = buf; n.loop = true; srcs.push(n);
+      const bp = filt('bandpass', 450, 0.8);
+      lfo(0.13, 220, bp.frequency);
+      n.connect(bp).connect(gain);
+      vol = 0.09;
+    } else if (kind === 'growl') {
+      const lp = filt('lowpass', 260), am = A.createGain(); am.gain.value = 0.5;
+      lfo(0.43, 0.45, am.gain);
+      osc('sawtooth', 55).connect(lp); osc('sawtooth', 55.8).connect(lp);
+      lp.connect(am).connect(gain);
+      vol = 0.07;
+    } else if (kind === 'drone') {
+      const lp = filt('lowpass', 500);
+      for (const f of [65.4, 98, 155.6]) osc('triangle', f).connect(lp);
+      lfo(0.2, 120, lp.frequency);
+      lp.connect(gain);
+      vol = 0.045;
+    }
+    gain.gain.linearRampToValueAtTime(vol, t0 + 1.2);
+    srcs.forEach(n => n.start());
+    this.ambNodes = { gain, srcs };
   }
 };
 
@@ -807,7 +860,7 @@ function go(i) {
   refEl.textContent = 'Apocalipsis ' + SCENES[idx].ref;
   panel.classList.remove('enter'); void panel.offsetWidth; panel.classList.add('enter');
   [...dots.children].forEach((li, k) => li.classList.toggle('on', k === idx));
-  Snd.buzz(idx >= 3 && idx <= 7);
+  Snd.ambient(SCENES[idx].amb);
 }
 
 function startStory() {
@@ -819,7 +872,7 @@ function startStory() {
 
 function showFinal() {
   mode = 'final';
-  Snd.buzz(false);
+  Snd.ambient(null);
   $('story').hidden = true;
   $('final').hidden = false;
   if (!grid.length) {
@@ -900,7 +953,8 @@ sndBtn.addEventListener('click', () => {
   Snd.on = !Snd.on;
   sndBtn.textContent = Snd.on ? '🔊' : '🔇';
   sndBtn.setAttribute('aria-label', Snd.on ? 'Silenciar' : 'Activar sonido');
-  if (Snd.on) { Snd.ensure(); Snd.buzz(mode === 'story' && idx >= 3 && idx <= 7); } else Snd.buzz(false);
+  if (Snd.on) Snd.ensure();
+  Snd.ambient(Snd.on && mode === 'story' ? SCENES[idx].amb : null);
 });
 $('screen').addEventListener('click', () => { if (mode === 'story') $('next').click(); });
 document.addEventListener('keydown', e => {
