@@ -506,82 +506,57 @@ function sForest(fb, t) {
   }
 }
 
-// 9:7 — coronas de oro, caras humanas, cabello de mujer, dientes de león
+// 9:7 — coronas de oro, caras humanas, cabello de mujer, dientes de león.
+// El personaje sale tal cual del dibujo original (sprites.js); aquí sólo se le da vida por partes.
+const parseSpr = rows => rows.map(r => [...r].map(ch => ch === '#' ? 2 : ch === '+' ? 1 : 0));
+const CABEZA = parseSpr(BESTIA.cabeza), LANGOSTA = parseSpr(BESTIA.langosta);
+
 function sFace(fb, t) {
-  const o = Math.sin(t * 2.6) * 0.5 + 0.5;
-  if (o > 0.85) shake(fb, t, 1);
-  fb.fill(C.blood); fb.dither(0, 0, W, H, C.night, 0.55);
-  for (let i = 0; i < 40; i++) fb.px((hs(i) * W + t * (10 + hs(i + 1) * 25)) % W, hs(i + 2) * H, C.dusk);
-  const cx = 80, cy = 54;
-  const fl = Math.abs(Math.sin(t * 14));
-  for (const sd of [-1, 1]) {
-    const pts = [[cx + sd * 14, cy - 4], [cx + sd * 50, cy - 24 - fl * 10], [cx + sd * 60, cy - 2 + fl * 4], [cx + sd * 20, cy + 10]];
-    fb.poly(pts, C.grey, 0.55);
-    for (let k = 1; k < 4; k++) fb.line(cx + sd * 16, cy + 2, lerp(pts[1][0], pts[2][0], k / 4), lerp(pts[1][1], pts[2][1], k / 4), C.smoke2);
+  const ink = [0, C.grey, C.ink];
+  const jaw = Math.round((Math.sin(t * 2.6) * 0.5 + 0.5) * 4);
+  if (jaw >= 4) shake(fb, t, 0.6);
+  fb.fill(C.paper);
+  // enjambre lejano
+  for (let i = 0; i < 10; i++) {
+    const x = fb.w - ((t * (12 + hs(i) * 10) + hs(i + 3) * fb.w) % (fb.w * 0.55)), y = 108 + hs(i + 1) * 36 + Math.sin(t * 5 + i) * 1.5;
+    fb.px(x, y, C.grey); if ((Math.floor(t * 14) + i) & 1) fb.px(x + 1, y - 1, C.paper2);
   }
-  // cuerpo con coraza
-  fb.poly([[cx - 24, H], [cx - 10, cy + 20], [cx + 10, cy + 20], [cx + 24, H]], C.ink2);
-  for (let k = 0; k < 4; k++) fb.hline(cx - 12 - k * 3, cx + 12 + k * 3, cy + 26 + k * 5, C.grey);
-  // cabello de mujer
-  for (let s = -22; s <= 22; s++) {
-    const x0 = cx + s * 0.9, ys = cy - 20 + Math.abs(s) * 0.35, len = 42 - Math.abs(s) * 0.3;
-    for (let k = 0; k < len; k++) {
-      const x = x0 + Math.sign(s) * k * 0.4 + Math.sin(k * 0.18 - t * 3 + s * 0.4) * 2.2 * (k / len);
-      fb.px(x, ys + k, (s & 1) ? C.hair : C.ink2);
+
+  // cabeza: respira, el pelo se mece y la mandíbula muerde
+  const HX = 4, HY = 22 + Math.round(Math.sin(t * 1.5) * 0.8);
+  for (let y = 0; y < CABEZA.length; y++) {
+    const row = CABEZA[y];
+    for (let x = 0; x < row.length; x++) {
+      const v = row[x]; if (!v) continue;
+      let dx = 0, dy = 0;
+      if (x < 32 && y > 29 && y < 103) dx = Math.round(Math.sin(t * 2.5 + y * 0.18) * 1.3 * (1 - x / 32));
+      if (y >= 80 && x >= 44) dy = jaw;
+      fb.px(HX + x + dx, HY + y + dy, ink[v]);
     }
   }
-  fb.rect(cx - 5, cy + 17, 11, 6, C.skin2);
-  // cara humana
-  fb.ell(cx, cy, 18, 22, C.ink);
-  fb.ell(cx, cy, 17, 21, C.skin);
-  fb.ell(cx + 9, cy + 4, 6, 14, C.skin2, 0.5);
-  // antenas
-  for (const sd of [-1, 1]) {
-    const w = Math.sin(t * 3 + sd) * 2;
-    fb.line(cx + sd * 6, cy - 24, cx + sd * 12 + w, cy - 36, C.ink);
-    fb.line(cx + sd * 12 + w, cy - 36, cx + sd * 22 + w, cy - 44, C.ink);
-    fb.px(cx + sd * 22 + w, cy - 45, C.gold);
+  if (jaw > 0) fb.rect(HX + 52, HY + 80, 52, jaw, C.ink);
+  // destellos de la corona de oro
+  for (let k = 0; k < 3; k++) {
+    const ph = (t * 0.8 + k / 3) % 1;
+    if (ph > 0.35) continue;
+    const gx = HX + [26, 50, 84][k], gy = HY + [4, 6, 3][k], r = ph < 0.17 ? 2 : 1;
+    fb.px(gx, gy, C.gold); for (let q = 1; q <= r; q++) { fb.px(gx - q, gy, C.gold); fb.px(gx + q, gy, C.gold); fb.px(gx, gy - q, C.gold); fb.px(gx, gy + q, C.gold); }
   }
-  // corona de oro
-  fb.rect(cx - 15, cy - 25, 31, 5, C.gold);
-  fb.hline(cx - 15, cx + 15, cy - 21, C.gold2);
-  for (const k of [-14, -7, 0, 7, 14]) {
-    const h = k === 0 ? 11 : 7;
-    fb.poly([[cx + k - 3, cy - 24], [cx + k, cy - 24 - h], [cx + k + 3, cy - 24]], C.gold);
-    fb.px(cx + k, cy - 24 - h, C.fire2);
-    fb.rect(cx + k, cy - 24, 2, 2, C.red);
-  }
-  const gx = (t * 28) % 50;
-  if (gx < 30) { fb.px(cx - 15 + gx, cy - 25, C.white); fb.px(cx - 14 + gx, cy - 24, C.white); }
-  // ojos
-  const blink = (t % 3.3) < 0.14, look = Math.round(Math.sin(t * 0.9) * 1);
-  for (const sd of [-1, 1]) {
-    const ex = cx + sd * 7, ey = cy - 4;
-    if (blink) fb.hline(ex - 3, ex + 3, ey, C.ink);
-    else {
-      fb.ell(ex, ey, 3.5, 2, C.white);
-      fb.rect(ex - 1 + look, ey - 1, 2, 3, C.red);
-      fb.px(ex + look, ey, C.ink);
-      fb.hline(ex - 3, ex + 3, ey - 2, C.ink);
+
+  // langosta con cola de escorpión: vuela, la cola se balancea y las cerdas vibran
+  const BX = 112 + Math.round(Math.sin(t * 0.9) * 3), BY = 8 + Math.round(Math.sin(t * 2.2) * 2);
+  const flap = Math.floor(t * 16) & 1;
+  for (let y = 0; y < LANGOSTA.length; y++) {
+    const row = LANGOSTA[y];
+    for (let x = 0; x < row.length; x++) {
+      const v = row[x]; if (!v) continue;
+      let dx = 0, dy = 0;
+      if (x < 12 && y > 58) dx = Math.round(Math.sin(t * 3 + (y - 58) * 0.12) * (y - 58) / 14);
+      if (y < 41 && x >= 40 && x < 100) dy = ((flap + (x >> 2)) & 1) ? -1 : 0;
+      if (x >= 100 && hs(x + y * 7 + Math.floor(t * 12)) > 0.85) continue;
+      fb.px(BX + x + dx, BY + y + dy, ink[v]);
     }
-    fb.line(ex + sd * 4, ey - 6, ex - sd * 3, ey - 3, C.ink);
-    fb.line(ex + sd * 4, ey - 5, ex - sd * 3, ey - 2, C.ink);
   }
-  fb.line(cx, cy - 1, cx - 1, cy + 4, C.skin2); fb.px(cx + 1, cy + 4, C.skin2);
-  // boca con dientes de león
-  const my = cy + 11, oh = 1 + o * 6.5;
-  fb.ell(cx, my, 9, oh + 0.5, C.ink);
-  if (oh > 2) { fb.ell(cx, my + 1, 7, oh - 1.5, C.blood); fb.ell(cx, my + oh - 1.5, 4, 1.2, C.red); }
-  for (let x = -7; x <= 7; x += 2.33) {
-    const fang = Math.abs(x) > 5.5, th = fang ? 3 + o * 2 : 2;
-    fb.poly([[cx + x - 1.2, my - oh], [cx + x + 1.2, my - oh], [cx + x, my - oh + th]], C.white);
-    fb.poly([[cx + x - 1.2, my + oh + 1], [cx + x + 1.2, my + oh + 1], [cx + x, my + oh + 1 - th]], C.white);
-  }
-  // langosta con cola de escorpión volando
-  const lx = 136 + Math.sin(t * 1.3) * 6, ly = 22 + Math.cos(t * 1.7) * 4;
-  locust(fb, lx, ly, t, 0, true, 2);
-  fb.line(lx + 7, ly + 2, lx + 12, ly - 2, C.ink); fb.line(lx + 12, ly - 2, lx + 11, ly - 6, C.ink); fb.px(lx + 10, ly - 7, C.red);
-  locust(fb, 18 + Math.sin(t * 2) * 5, 78 + Math.cos(t * 1.4) * 3, t, 3, false, 2);
   fb.ox = fb.oy = 0;
 }
 
@@ -741,7 +716,7 @@ const SCENES = [
   { ref: '9:2', draw: sDark, sfx: [], text: 'Y se oscureció el sol y el aire por el humo del pozo.' },
   { ref: '9:3', draw: sSwarm, sfx: [], text: 'Y del humo salieron langostas sobre la tierra.' },
   { ref: '9:4', draw: sForest, sfx: [], text: 'Y se les mandó que no dañasen a la hierba de la tierra, sino solamente a los hombres que no tuvieran el sello.' },
-  { ref: '9:7', draw: sFace, sfx: [[0.3, 'roar']], text: 'Tenían como coronas de oro; sus caras eran como caras humanas, tenían cabello como de mujer y dientes como de león.' },
+  { ref: '9:7', draw: sFace, w: 240, h: 150, sfx: [[0.3, 'roar']], text: 'Tenían como coronas de oro; sus caras eran como caras humanas, tenían cabello como de mujer y dientes como de león.' },
   { ref: '9:10', draw: sMonths, sfx: [], text: 'Tenían poder para dañar a los hombres durante 5 meses.' },
   { ref: '9:11', draw: sKing, sfx: [[4.6, 'boom']], text: 'Y tienen por rey al ángel del abismo.' },
   { ref: '9:12', draw: sWoe, sfx: [[3, 'trumpet']], text: 'El primer ay pasó; he aquí vienen aún dos ayes después de esto.' }
@@ -797,7 +772,9 @@ const Snd = {
 
 // ---------- Motor ----------
 const $ = id => document.getElementById(id);
-const fb = new FB(W, H);
+const fbs = {};
+const fbFor = s => { const w = s.w || W, h = s.h || H, k = w + 'x' + h; return fbs[k] || (fbs[k] = new FB(w, h)); };
+let fb = fbFor({});
 const screen = $('screen').getContext('2d');
 const panel = $('panel'), refEl = $('ref'), textEl = $('text'), prog = $('prog'), dots = $('dots');
 let mode = 'title', idx = 0, t0 = 0, paused = false, pausedAt = 0, lastChars = -1;
@@ -852,7 +829,7 @@ function showFinal() {
         const fig = document.createElement('figure');
         fig.className = 'mini';
         const cv = document.createElement('canvas');
-        cv.width = W; cv.height = H;
+        cv.width = SCENES[i].w || W; cv.height = SCENES[i].h || H;
         const cap = document.createElement('figcaption');
         const b = document.createElement('b'); b.textContent = SCENES[i].ref + ' ';
         cap.append(b, SCENES[i].text);
@@ -882,6 +859,8 @@ function frame(now) {
     screen.putImageData(fb.img, 0, 0);
   } else if (mode === 'story') {
     const s = SCENES[idx], t = sceneTime(now);
+    fb = fbFor(s);
+    if (screen.canvas.width !== fb.w) { screen.canvas.width = fb.w; screen.canvas.height = fb.h; }
     fb.fill(C.paper); s.draw(fb, Math.min(t, s.dur)); fb.ox = fb.oy = 0;
     screen.putImageData(fb.img, 0, 0);
     renderCaption(s, t);
@@ -896,6 +875,7 @@ function frame(now) {
     for (const it of grid) {
       const s = SCENES[it.i], cyc = s.dur + 2;
       const t = (now / 1000 + it.i * 2.3) % cyc;
+      fb = fbFor(s);
       fb.fill(C.paper); s.draw(fb, Math.min(t, s.dur)); fb.ox = fb.oy = 0;
       it.ctx.putImageData(fb.img, 0, 0);
     }
