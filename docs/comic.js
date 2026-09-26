@@ -546,22 +546,78 @@ function buildCabeza() {
   const inSil = v.map((r, y) => r.map((_, x) => insidePoly(sil, x + 0.5, y + 0.5) && y - TOPE >= 26));
   const piel = v.map(r => r.map(() => 0));
   for (const [x, y] of [[62, 45], [80, 50], [45, 60], [40, 75], [30, 90], [55, 88], [70, 42]]) flood(v, x, y + TOPE, [0, 0, w - 1, h - 1], piel, (x, y) => !inSil[y][x]);
-  return v.map((row, y) => row.map((val, x) => {
-    if (val === 2) return C.ink;
-    if (val === 1) return C.ink2;
-    if (oro[y][x]) return (x + y) % 7 === 0 ? C.fire2 : C.gold;
+  // 1) región de cada pixel
+  const reg = v.map((row, y) => row.map((val, x) => {
+    if (val === 2) return 'ink';
+    if (val === 1) return 'soft';
+    if (oro[y][x]) return 'gold';
     const oy = y - TOPE;
-    if (!inSil[y][x]) return 0;
-    if (x >= 58 && x <= 104 && oy >= 64 && oy <= 97) return C.ivory;
-    if (x >= 40 && oy >= 99) return C.lip;
-    return piel[y][x] ? C.skin : C.hair;
+    if (!inSil[y][x]) return '';
+    if (x >= 58 && x <= 104 && oy >= 64 && oy <= 97) return 'ivory';
+    if (x >= 40 && oy >= 99) return 'lip';
+    return piel[y][x] ? 'skin' : 'hair';
   }));
+  const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? '' : reg[y][x];
+  const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  // 2) limpieza: trazos suaves y tinta suelta toman el color de la zona vecina
+  for (let pass = 0; pass < 2; pass++) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const r = reg[y][x];
+    if (r !== 'soft' && r !== 'ink') continue;
+    const nb = N4.map(([dx, dy]) => at(x + dx, y + dy));
+    if (r === 'ink' && nb.some(n => n === 'ink')) continue;
+    const fill = nb.find(n => n && n !== 'ink' && n !== 'soft' && n !== 'shadeOf');
+    reg[y][x] = fill ? fill : (r === 'soft' && nb.some(n => n === 'ink') ? 'ink' : r === 'soft' ? '' : 'ink');
+  }
+  // 3) pintura con luz desde arriba a la izquierda
+  const PAL = {
+    skin: [C.skin, toU32('#b07e55'), toU32('#eec79c')], hair: [toU32('#5a2f17'), toU32('#3a1d0e'), toU32('#80492a')],
+    gold: [C.gold, C.gold2, C.fire2], ivory: [C.ivory, toU32('#c9ba94'), C.white], lip: [C.lip, C.blood, toU32('#c45e4a')]
+  };
+  const B = (x, y) => BAYER[(y & 3) * 4 + (x & 3)];
+  const out = reg.map((row, y) => row.map((r, x) => {
+    if (r === 'ink') return C.ink;
+    const pal = PAL[r]; if (!pal) return 0;
+    const [base, dark, light] = pal;
+    const sh = at(x + 1, y) === 'ink' || at(x, y + 1) === 'ink' || at(x + 1, y + 1) === 'ink';
+    const hl = at(x - 1, y) === 'ink' || at(x, y - 1) === 'ink';
+    const oy = y - TOPE;
+    if (r === 'skin') {
+      if (sh) return dark;
+      if (x > 84 && B(x, y) < 8) return dark;          // mejilla derecha en sombra
+      if (hl && x < 70 && oy < 60) return light;
+      return base;
+    }
+    if (r === 'hair') return sh ? dark : ((x * 2 + y) % 6 === 0 ? light : base);
+    if (r === 'gold') return sh ? dark : hl ? light : base;
+    if (r === 'ivory') return sh || B(x, y) < 3 && oy > 90 ? dark : hl ? light : base;
+    if (r === 'lip') return sh ? dark : hl ? light : base;
+    return base;
+  }));
+  // joyas rojas en la base de cada punta
+  for (const [, , ax] of puntas) {
+    const jy = TOPE + 8;
+    if (reg[jy][ax] === 'gold') { out[jy][ax] = C.red; out[jy][ax + 1] = C.red; out[jy + 1][ax] = C.blood; out[jy + 1][ax + 1] = C.red; out[jy][ax] = C.fire2; }
+  }
+  return out;
 }
 
 function buildLangosta() {
-  const g = BESTIA.langosta.map(r => [...r].map(ch => ch === '#' ? C.ink : ch === '+' ? C.ink2 : 0));
-  // ojo rojo en la cabeza y alas grises translúcidas sobre el lomo
+  const src = BESTIA.langosta.map(r => [...r].map(ch => ch === '#' ? 2 : ch === '+' ? 1 : 0));
+  const h = src.length, w = src[0].length;
+  const ink = (x, y) => x >= 0 && y >= 0 && x < w && y < h && src[y][x] === 2;
+  const body = toU32('#4b3b2a'), bodyL = toU32('#6d5638'), wing = toU32('#7d7a70');
+  // tinta en el borde; por dentro cuerpo pardo con brillo arriba, cerdas del lomo grisáceas
+  const g = src.map((row, y) => row.map((v, x) => {
+    if (!v) return 0;
+    if (v === 1) return ink(x - 1, y) || ink(x + 1, y) || ink(x, y - 1) || ink(x, y + 1) ? C.ink2 : 0;
+    const inner = ink(x - 1, y) && ink(x + 1, y) && ink(x, y - 1) && ink(x, y + 1) && ink(x - 2, y) && ink(x + 2, y) && ink(x, y - 2) && ink(x, y + 2);
+    if (!inner) return C.ink;
+    if (y < 40 && x >= 44 && x < 100) return (x + y) % 3 ? wing : C.ink2;
+    return !ink(x, y - 3) ? bodyL : body;
+  }));
+  // ojo rojo en la cabeza
   for (const [x, y] of [[92, 13], [93, 13], [92, 14]]) g[y][x] = C.red;
+  g[13][93] = C.fire2;
   return g;
 }
 
@@ -818,12 +874,12 @@ function sWoe(fb, t) {
 const SCENES = [
   { ref: '9:1', draw: sStar, amb: 'wind', sfx: [[3, 'boom']], text: 'Y vi una estrella que cayó del cielo a la tierra; y se le dio la llave del pozo del abismo.' },
   { ref: '9:2', draw: sWell, amb: 'wind', sfx: [[1.6, 'boom']], text: 'Y abrió el pozo del abismo, y subió humo del pozo como humo de un gran horno.' },
-  { ref: '9:2', draw: sDark, amb: 'drone', sfx: [], text: 'Y se oscureció el sol y el aire por el humo del pozo.' },
+  { ref: '9:2', draw: sDark, amb: 'wind', sfx: [], text: 'Y se oscureció el sol y el aire por el humo del pozo.' },
   { ref: '9:3', draw: sSwarm, amb: 'buzz', sfx: [], text: 'Y del humo salieron langostas sobre la tierra.' },
   { ref: '9:4', draw: sForest, amb: 'buzz', sfx: [], text: 'Y se les mandó que no dañasen a la hierba de la tierra, sino solamente a los hombres que no tuvieran el sello.' },
-  { ref: '9:7', draw: sFace, amb: 'growl', w: 240, h: 150, sfx: [[0.3, 'roar']], text: 'Tenían como coronas de oro; sus caras eran como caras humanas, tenían cabello como de mujer y dientes como de león.' },
+  { ref: '9:7', draw: sFace, amb: 'pad', w: 240, h: 150, sfx: [[0.3, 'roar']], text: 'Tenían como coronas de oro; sus caras eran como caras humanas, tenían cabello como de mujer y dientes como de león.' },
   { ref: '9:10', draw: sMonths, amb: 'wind', sfx: [[0.05, 'bell'], [1.3, 'bell'], [2.6, 'bell'], [3.9, 'bell'], [5.2, 'bell']], text: 'Tenían poder para dañar a los hombres durante 5 meses.' },
-  { ref: '9:11', draw: sKing, amb: 'drone', sfx: [[4.6, 'boom']], text: 'Y tienen por rey al ángel del abismo.' },
+  { ref: '9:11', draw: sKing, amb: 'pad', sfx: [[4.6, 'boom']], text: 'Y tienen por rey al ángel del abismo.' },
   { ref: '9:12', draw: sWoe, amb: null, sfx: [[3, 'trumpet']], text: 'El primer ay pasó; he aquí vienen aún dos ayes después de esto.' }
 ];
 SCENES.forEach(s => { s.dur = Math.max(7.5, s.text.length / 30 + 5); });
@@ -860,7 +916,7 @@ const Snd = {
     src.connect(lp).connect(g).connect(ac.destination); src.start();
   },
   boom() { this.noise(1.2, 380, 0.7); },
-  roar() { this.noise(0.9, 900, 0.35); },
+  roar() { this.noise(0.8, 600, 0.22); },
   bell() {
     if (!this.on) return; const ac = this.ensure(); if (!ac) return;
     const t0 = ac.currentTime;
@@ -909,18 +965,13 @@ const Snd = {
       lfo(0.13, 220, bp.frequency);
       n.connect(bp).connect(gain);
       vol = 0.09;
-    } else if (kind === 'growl') {
-      const lp = filt('lowpass', 260), am = A.createGain(); am.gain.value = 0.5;
-      lfo(0.43, 0.45, am.gain);
-      osc('sawtooth', 55).connect(lp); osc('sawtooth', 55.8).connect(lp);
+    } else if (kind === 'pad') {
+      // acorde suave y misterioso (nada de tonos rasposos)
+      const lp = filt('lowpass', 1400), am = A.createGain(); am.gain.value = 0.8;
+      lfo(0.25, 0.2, am.gain);
+      for (const f of [220, 261.6, 329.6, 440]) { const o = osc('sine', f); lfo(0.1 + f / 5000, 1.5, o.frequency); o.connect(lp); }
       lp.connect(am).connect(gain);
-      vol = 0.07;
-    } else if (kind === 'drone') {
-      const lp = filt('lowpass', 500);
-      for (const f of [65.4, 98, 155.6]) osc('triangle', f).connect(lp);
-      lfo(0.2, 120, lp.frequency);
-      lp.connect(gain);
-      vol = 0.045;
+      vol = 0.03;
     }
     gain.gain.linearRampToValueAtTime(vol, t0 + 1.2);
     srcs.forEach(n => n.start());
